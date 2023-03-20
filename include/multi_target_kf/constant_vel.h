@@ -727,7 +727,7 @@ predictX(kf_state s, double dt){
         std::cout << "[predictX] new x = \n" << xx.x << "\n";
     }
     
-    return K1, x1, z1, P1, Q_, FF, P12, xx;
+    return K1, x1, z1, P1, P12, xx;
    
 }
 
