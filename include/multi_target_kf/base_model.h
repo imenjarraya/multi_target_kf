@@ -70,14 +70,45 @@ class BaseModel
 {
 protected:
 
-Eigen::MatrixXd F_; /* State transition jacobian matrix */
+Eigen::MatrixXd F_; /* State transition matrix */
 Eigen::MatrixXd H_; /* Observation jacobian matrix */
 Eigen::MatrixXd Q_; /** Process covariance matrix */
 Eigen::MatrixXd P_; /* State covariance estimate */
 Eigen::MatrixXd R_; /** Measurements covariance matrix */
-Eigen::VectorXd x_; /* Current state vector [px, py, pz, theta, gamma, theta_dot, gamma_dot, speed] */
-const unsigned int NUM_STATES=8; /* State dimension */
-const unsigned int NUM_MEASUREMENTS=8; /* Measurements dimension */
+Eigen::VectorXd x_; /* Current state (mean) vector [x, y, z, vx, vy, vz] */
+Eigen::MatrixXd P1; /* State covariance estimate */
+Eigen::MatrixXd P2; /** Measurements covariance matrix */
+Eigen::MatrixXd P12; /** Measurements covariance matrix */
+Eigen::MatrixXd K1; /** Measurements covariance matrix */
+Eigen::VectorXd err; /* Current state (mean) vector [x, y, z, vx, vy, vz] */
+Eigen::VectorXd squared_error;
+Eigen::MatrixXd Xsig; /* sigma points around x */
+Eigen::MatrixXd x1; /* */
+Eigen::MatrixXd X1; /* */
+Eigen::MatrixXd X2; /* X1(i,k) - x1(i,0); */
+Eigen::MatrixXd Xcol; /* f(X)*/
+Eigen::MatrixXd X1col; /* */
+Eigen::MatrixXd z1; /* */
+Eigen::MatrixXd Z1; /* */
+Eigen::MatrixXd Z2; /* */
+Eigen::MatrixXd Z1col; /* */
+Eigen::MatrixXd Wm; /* weights for means */
+Eigen::MatrixXd Wc; /* weights for covariance	 */
+Eigen::MatrixXd diagWc; //
+Eigen::MatrixXd diagWm; //
+Eigen::MatrixXd L; //
+
+const unsigned int NUM_STATES=8;// constant velocity model
+const unsigned int NUM_MEASUREMENTS=3; // position \in R^3
+const unsigned int n=NUM_STATES;// constant velocity model
+const unsigned int m= NUM_MEASUREMENTS; // position \in R^3
+const unsigned int L1= 2*NUM_STATES+1;// constant velocity model
+const unsigned int beta= 2;// constant velocity model
+const float alpha=0.21063; // 0.03
+const float ki=0.91; // position \in R^3
+const float lambda= (alpha*alpha)*(n+ki)-n; // position \in R^3
+const float c= n+lambda; // position \in R^3
+const float C=sqrt(c); // position \in R^3
 double dt_; /* Prediction sampling time */
 ros::Time current_t_; /* Current time stamp */
 
