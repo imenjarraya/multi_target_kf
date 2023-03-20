@@ -57,10 +57,55 @@ Eigen::MatrixXd F_; /* State transition matrix */
 Eigen::MatrixXd H_; /* Observation jacobian matrix */
 Eigen::MatrixXd Q_; /** Process covariance matrix */
 Eigen::MatrixXd P_; /* State covariance estimate */
+Eigen::MatrixXd Pest; /* estimate State covariance estimate */
+Eigen::MatrixXd P12; /* State covariance estimate P12*/
+Eigen::MatrixXd P1; /* State covariance estimate */
+Eigen::MatrixXd A1; /* State covariance estimate */
 Eigen::MatrixXd R_; /** Measurements covariance matrix */
+Eigen::MatrixXd P2; /** Measurements covariance matrix */
+Eigen::MatrixXd Pd; /** Measurements covariance matrix */
+Eigen::MatrixXd K1; /** Measurements covariance matrix */
 Eigen::VectorXd x_; /* Current state (mean) vector [x, y, z, vx, vy, vz] */
+Eigen::VectorXd xd; /* Current state (mean) vector [x, y, vx, vy] */
+Eigen::VectorXd xest; /* Current state (mean) vector [x, y, z, vx, vy, vz] */
+Eigen::VectorXd err; /* Current state (mean) vector [x, y, z, vx, vy, vz] */
+Eigen::VectorXd squared_error;
+Eigen::MatrixXd Au; /* /* Chol gives a lower (not upper) triangle matrix  */
+Eigen::MatrixXd Xsig; /* sigma points around x */
+Eigen::MatrixXd Xsigd; /* sigma points around x */
+Eigen::MatrixXd x1; /* */
+Eigen::MatrixXd X1; /* */
+Eigen::MatrixXd X2; /* X1(i,k) - x1(i,0); */
+Eigen::MatrixXd Xcol; /* f(X)*/
+Eigen::MatrixXd X1col; /* */
+Eigen::MatrixXd z1; /* */
+Eigen::MatrixXd Z1; /* */
+Eigen::MatrixXd Z2; /* */
+Eigen::MatrixXd Z1col; /* */
+Eigen::MatrixXd Wm; /* weights for means */
+Eigen::MatrixXd Wc; /* weights for covariance	 */
+Eigen::MatrixXd diagWc; 
+Eigen::MatrixXd diagWm; 
+Eigen::MatrixXd zmes; 
+Eigen::MatrixXd range; 
+Eigen::MatrixXd azimuth; 
+Eigen::MatrixXd elevation; 
+
+
 const unsigned int NUM_STATES=6;// constant velocity model
 const unsigned int NUM_MEASUREMENTS=3; // position \in R^3
+const unsigned int n=6;// constant velocity model
+const unsigned int m= NUM_MEASUREMENTS; // position \in R^3
+const unsigned int L1= 2*NUM_STATES+1;// constant velocity model
+const unsigned int beta= 2;// constant velocity model
+const float alpha=0.21063; // 0.03
+const float ki=0.91; // position \in R^3
+const float lambda= (alpha*alpha)*(n+ki)-n; // position \in R^3
+const float c= n+lambda; // position \in R^3
+const float C=sqrt(c); // position \in R^3
+
+
+
 double dt_; /* Prediction sampling time */
 ros::Time current_t_; /* Current time stamp */
 
@@ -81,8 +126,36 @@ F_(Eigen::MatrixXd::Zero(NUM_STATES,NUM_STATES)),
 H_(Eigen::MatrixXd::Zero(NUM_MEASUREMENTS,NUM_STATES)),
 Q_(Eigen::MatrixXd::Zero(NUM_STATES,NUM_STATES)),
 P_(Eigen::MatrixXd::Zero(NUM_STATES,NUM_STATES)),
+A1(Eigen::MatrixXd::Zero(4,4)),
+P1(Eigen::MatrixXd::Zero(NUM_STATES,NUM_STATES)),
+Pd(Eigen::MatrixXd::Zero(4,4)),
+Pest(Eigen::MatrixXd::Zero(NUM_STATES,NUM_STATES)),
+P12(Eigen::MatrixXd::Zero(NUM_STATES,NUM_STATES)),
+K1(Eigen::MatrixXd::Zero(NUM_STATES,NUM_STATES)),
 R_(Eigen::MatrixXd::Zero(NUM_MEASUREMENTS,NUM_MEASUREMENTS)),
+P2(Eigen::MatrixXd::Zero(NUM_MEASUREMENTS,NUM_MEASUREMENTS)),
 x_(Eigen::MatrixXd::Zero(NUM_STATES,1)),
+xd(Eigen::MatrixXd::Zero(4,1)),
+err(Eigen::MatrixXd::Zero(NUM_STATES,1)),
+xest(Eigen::MatrixXd::Zero(NUM_STATES,1)),
+Au(Eigen::MatrixXd::Zero(NUM_STATES,NUM_STATES)),
+Xsig(Eigen::MatrixXd::Zero(NUM_STATES,NUM_STATES*2+1)), //sigma matrix
+Xsigd(Eigen::MatrixXd::Zero(4,4*2+1)), //sigma matrix
+x1(Eigen::MatrixXd::Zero(NUM_STATES,1)),
+X1(Eigen::MatrixXd::Zero(NUM_STATES,NUM_STATES*2+1)),
+X2(Eigen::MatrixXd::Zero(NUM_STATES,NUM_STATES*2+1)),
+X1col(Eigen::MatrixXd::Zero(NUM_STATES,1)),
+Xcol(Eigen::MatrixXd::Zero(NUM_STATES,1)),
+Wm(Eigen::MatrixXd::Zero(1,NUM_STATES*2+1)),/* weights for means	 */
+Wc(Eigen::MatrixXd::Zero(1,NUM_STATES*2+1)),/* weights for covariance	 */
+diagWc(Eigen::MatrixXd::Zero(NUM_STATES*2+1,NUM_STATES*2+1)),
+diagWm(Eigen::MatrixXd::Zero(NUM_STATES*2+1,NUM_STATES*2+1)),
+Z2(Eigen::MatrixXd::Zero(NUM_MEASUREMENTS,NUM_STATES*2+1)),
+Z1(Eigen::MatrixXd::Zero(NUM_MEASUREMENTS,NUM_STATES*2+1)),
+z1(Eigen::MatrixXd::Zero(NUM_MEASUREMENTS,1)),
+range(Eigen::MatrixXd::Zero(1,1)),
+azimuth(Eigen::MatrixXd::Zero(1,1)),
+elevation(Eigen::MatrixXd::Zero(1,1)),
 acc_variance_(Eigen::VectorXd::Zero(3))
 {}
 ~ConstantVelModel(){}
@@ -190,8 +263,10 @@ f(Eigen::VectorXd x, double dt)
     // The following is based on this thesis:
    // (https://dspace.cvut.cz/bitstream/handle/10467/76157/F3-DP-2018-Hert-Daniel-thesis_hertdani.pdf?sequence=-1&isAllowed=y)
    A.block(0,3,3,3)= dt*Eigen::MatrixXd::Identity(3,3);
-    
-    return (A*x);
+   //A1 = Eigen::MatrixXd::Identity(4, 4);
+   //A1.block(0,2,2,2)= dt*Eigen::MatrixXd::Identity(2,2);
+
+return (A*x);
 }
 
 /**
@@ -460,6 +535,7 @@ P(double sigma_p, double sigma_v)
  */
 Eigen::VectorXd
 getx(void){
+   
     return x_;
 }
 
@@ -499,25 +575,160 @@ predictX(kf_state s, double dt){
 
     kf_state xx;
     xx.time_stamp = s.time_stamp + ros::Duration(dt);
-
     auto FF = F(dt);
     xx.P = FF*s.P*FF.transpose()+Q(dt);
     xx.x = f(s.x, dt);
+     /* weight equations are found in the upper part of http://www.cslu.ogi.edu/nsel/ukf/node6.html */
+  
+ 
+    Wm(0,0) = lambda/c;
+    Wc(0,0) = lambda/(c+(1-(alpha*alpha)+beta));
+    for (unsigned int k=1; k<L1; k++)
+    {
+	      Wm(0,k) = 0.5/c;
+	      Wc(0,k) = 0.5/c;
+    }
+    Eigen::MatrixXd L( s.P.llt().matrixL() );
+   // std::cout << L << std::endl;
 
-    if(debug_){
-        ROS_INFO("[ConstantVelModel::predictX] ||x_new - x_old|| = %f", (xx.x - s.x).norm());
-        ROS_INFO("[ConstantVelModel::predictX] det(P) of predicted state: %f", xx.P.determinant());
+
+
+    Xsig = Eigen::MatrixXd::Zero(n,L1);
+    unsigned int k=0;
+	{
+		for (unsigned int i=0; i<n; i++)
+		{
+			Xsig(i,k) = s.x(i,0);
+
+		}
+	}
+	for(k=1; k<n+1; k++)
+	{
+		for (unsigned int i=0; i<n; i++)
+		{
+			Xsig(i,k) = s.x(i,0) + C*L(i,k-1);
+		}
+	}
+	for(k=n+1; k<L1; k++)
+	{
+		for (unsigned int i=0; i<n; i++)
+		{
+			Xsig(i,k) = s.x(i,0) - C*L(i,k-1-n);
+		}
+	}
+    //std::cout << Xsig << std::endl;
+    Xcol = Eigen::MatrixXd::Zero(n,1);
+    X1col = Eigen::MatrixXd::Zero(n,1);
+    x1 = Eigen::MatrixXd::Zero(n,1);
+    X1 = Eigen::MatrixXd::Zero(n,L1);
+    for(unsigned int k=0; k<L1; k++)
+	{
+
+		  for (unsigned int i=0; i<n; i++)
+		  {
+			Xcol(i,0) = Xsig(i,k);	// take out a column so that state_function can take it
+		  }	
+   	
+          auto FF = F(dt_); 
+
+	      X1col = FF*Xcol;
+		  for (unsigned int i=0; i<n; i++)
+		  {
+			x1(i,0) +=  Wm(0,k) * X1col(i,0);
+		  }
+		  for (unsigned int i=0; i<n; i++)
+		  {
+			X1(i,k) = X1col(i,0);	// put back the output column
+		  }	
+	}
+    //std::cout << x1 << std::endl;
+    X2= Eigen::MatrixXd::Zero(NUM_STATES,NUM_STATES*2+1);
+    for (unsigned int k=0; k<L1; k++)
+		for (unsigned int i=0; i<n; i++)
+		{
+			X2(i,k) = X1(i,k) - x1(i,0);	//X2.Column(k) = X1.Column(k) - x1;
+		}
+    //std::cout << X2 << std::endl;
+	diagWm =Eigen::MatrixXd::Zero(L1,L1);
+
+	for(unsigned int k=0; k<L1; k++)
+		diagWm(k,k) = Wm(0,k);
+    
+    P12=Eigen::MatrixXd::Zero(NUM_STATES,NUM_MEASUREMENTS);
+   
+    P1=Eigen::MatrixXd::Zero(NUM_STATES,NUM_STATES);
+
+	P1= X2 * diagWm * X2.transpose()+ Q_;	/* ~ means transpose */
+    // std::cout << P1 << std::endl;
+	/* unscented transformation (ut) of measurements */
+    /* unscented transformation (ut) of measurements */
+	//std::cout << "Q=" <<std::endl;                  //covariance update
+	//std::cout << Q_ << std::endl;
+    Z1=Eigen::MatrixXd::Zero(NUM_MEASUREMENTS,NUM_STATES*2+1);
+    z1=Eigen::MatrixXd::Zero(NUM_MEASUREMENTS,1);
+    Z1col=Eigen::MatrixXd::Zero(NUM_MEASUREMENTS,L1);
+
+	for(unsigned int k=0; k<L1; k++)
+	{
+		
+		for (unsigned int i=0; i<m; i++)
+		{
+			X1col(i,0) = X1(i,k);	// take out a column so that measurement_function can take it
+		}		
+		
+        Z1col = h(X1col);
+        //std::cout << Z1col << std::endl;
+		for (unsigned int i=0; i<m; i++)
+		{
+			z1(i,0) += Wm(0,k) * Z1col(i,0);
+		}
+		for (unsigned int i=0; i<m; i++)
+		{
+     		Z1(i,k) = Z1col(i,0);	// put back the output column
+		}	
+	}
+    
+    Z2=Eigen::MatrixXd::Zero(NUM_MEASUREMENTS,NUM_STATES*2+1);
+    for (unsigned int k=0; k<L1; k++)
+	{	
+        for (unsigned int i=0; i<m; i++)
+		{
+			Z2(i,k) = Z1(i,k) - z1(i,0);	//Z2.Column(k) = Z1.Column(k) - z1;
+	    }
+    }
+    
+    diagWc =Eigen::MatrixXd::Zero(L1,L1);
+    
+	for(unsigned int k=0; k<L1; k++)
+    {
+		diagWc(k,k) = Wc(0,k);
+    }
+
+    P2= Eigen::MatrixXd::Zero(NUM_MEASUREMENTS,NUM_MEASUREMENTS);
+    P2 = Z2 * diagWc * Z2.transpose() + 10*R_;	
+   // std::cout << "R =" <<std::endl;                  //covariance update
+	//std::cout << R_ << std::endl;
+	P12 = X2 * diagWc * Z2.transpose();	//transformed cross-covariance
+   // std::cout << "P12=" <<std::endl;                  //covariance update
+	//std::cout << P12 << std::endl;
+    K1 = Eigen::MatrixXd::Zero(NUM_STATES,NUM_STATES);
+	K1 = P12 * P2.inverse();
+     if(debug_){
+        ROS_INFO("[ConstantVelocityModel::predictX] ||x_new - x_old|| = %f", (xx.x - s.x).norm());
+        ROS_INFO("[ConstantVelocityModel::predictX] det(P) of predicted state: %f", xx.P.determinant());
     }
 
     if(debug_){
         std::cout << "[predictX] old P = \n" << s.P << "\n";
         std::cout << "[predictX] old x = \n" << s.x << "\n";
-
+    
+    
         std::cout << "[predictX] new P = \n" << xx.P << "\n";
         std::cout << "[predictX] new x = \n" << xx.x << "\n";
     }
     
-    return xx;
+    return K1, x1, z1, P1, Q_, FF, P12, xx;
+   
 }
 
 /**
@@ -532,19 +743,28 @@ updateX(sensor_measurement z, kf_state s){
 
     kf_state xx;
     xx.time_stamp = z.time_stamp; //z.time_stamp;
-
     Eigen::VectorXd y = z.z - h(s.x); // innovation
-    Eigen::MatrixXd S = H()*s.P*H().transpose() + R_; // innovation covariance
-    Eigen::MatrixXd K = s.P*H().transpose()*S.inverse(); // optimal Kalman gain
-    xx.x = s.x + K*y; 
-    xx.P = (Eigen::MatrixXd::Identity(NUM_STATES,NUM_STATES) - K*H())*s.P;
+   // Eigen::MatrixXd S = H()*s.P*H().transpose() + R_; // innovation covariance
+    //Eigen::MatrixXd K = s.P*H().transpose()*S.inverse(); // optimal Kalman gain
+    Eigen::MatrixXd K = K1; // optimal Kalman gain
+    xx.x = x1 +K1 *(z.z-z1);                         //state update
+    //std::cout << "Xukf" <<std::endl;                  //covariance update
+	//std::cout << xx.x << std::endl;
+    xx.P= P1-K1*P12.transpose();  
+    err = xx.x - z.z;    
 
+    // Compute the mean squared error
+    squared_error = err.array().square();
+    double mse = squared_error.mean();
+    std::cout << "error" <<std::endl;  
+    std::cout <<  mse << std::endl;
+  
     if(debug_){
         ROS_INFO("[ConstantVelModel::updateX] Done updating state");
         ROS_INFO("[ConstantVelModel::updateX] Norm of innovation y = %f ", y.norm());
         std::cout << "[ConstantVelModel::updateX] predicted state P: \n" << s.P << "\n";
         // std::cout << "[ConstantVelModel::updateX] innovation covariance S: \n" << S << "\n";
-        std::cout << "[ConstantVelModel::updateX] Kalman gain: \n" << K << "\n";
+        //std::cout << "[ConstantVelModel::updateX] Kalman gain: \n" << K << "\n";
         std::cout << "[ConstantVelModel::updateX] uncorrected state: \n" << s.x << "\n";
         std::cout << "[ConstantVelModel::updateX] measurement: \n" << z.z << "\n";
         std::cout << "[ConstantVelModel::updateX] corrected state: \n" << xx.x << "\n";
