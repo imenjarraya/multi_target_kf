@@ -85,7 +85,7 @@ private:
    HungarianAlgorithm HungAlgo_; /** Hungarian algorithm object for state-measurement assignment */
 public:
    ConstantVelModel kf_model_; /* Constant velocity KF model */
-
+ 
    double dt_pred_;
    double last_prediction_t_;
 
@@ -131,6 +131,7 @@ public:
     * @brief Initializes KF F,H,Q,R, and initial state and covariance estimates
     */
    bool initKF(void);
+ 
 
    /**
     * @brief Initializes KF tracks using current measurements.
